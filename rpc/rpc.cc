@@ -665,7 +665,47 @@ rpcs::checkduplicate_and_update(unsigned int clt_nonce, unsigned int xid,
 	ScopedLock rwl(&reply_window_m_);
 
         // You fill this in for Lab 1.
-	return NEW;
+
+        //std::cout << "clt_nonce: " << clt_nonce << ". xid: " << xid << ". to delete: " << xid_rep << ". status: ";
+
+        std::list<reply_t>::iterator mem;
+        // free all received reply message
+        for(std::list<reply_t>::iterator it = reply_window_[clt_nonce].begin(); it != reply_window_[clt_nonce].end(); ++it) {
+            if(it->xid <= xid_rep) {
+                free(it->buf);
+                it->buf = NULL;
+                it->sz = 0;
+            }
+        }
+        // search for desired reply
+        
+        for(mem = reply_window_[clt_nonce].begin(); mem != reply_window_[clt_nonce].end(); ++mem) {
+            //std::cout << " " << mem->xid;
+            if(mem->xid == xid)
+                break;
+        }
+        //std::cout << std::endl;
+        
+        if(mem == reply_window_[clt_nonce].end()) { // if not found, it is a new request
+            reply_t r = reply_t(xid);
+            reply_window_[clt_nonce].push_back(r);
+            //std::cout << "new" << std::endl;
+	    return NEW;
+        } else {
+            if(mem->cb_present == false) {  // still processing, no buffer saved yet
+                //std::cout << "inprogress" << std::endl;
+                return INPROGRESS;
+            }
+            else if(mem->buf == NULL) {     // returned and deleted
+                //std::cout << "forgotten" << std::endl;
+                return FORGOTTEN;
+            } else {                   // returned, but still have the copy
+                b = &(mem->buf);
+                sz = &(mem->sz);
+                //std::cout << "done" << std::endl;
+                return DONE;
+            }
+        }
 }
 
 // rpcs::dispatch calls add_reply when it is sending a reply to an RPC,
@@ -679,6 +719,15 @@ rpcs::add_reply(unsigned int clt_nonce, unsigned int xid,
 {
 	ScopedLock rwl(&reply_window_m_);
         // You fill this in for Lab 1.
+        //std::cout << "adding clt_nonce " << clt_nonce << ". xid " << xid << std::endl;
+        for(std::list<reply_t>::iterator it = reply_window_[clt_nonce].begin(); it != reply_window_[clt_nonce].end(); ++it) {
+            if(it->xid == xid) {
+                it->cb_present = true;
+                it->buf = b;
+                it->sz = sz;
+                break;
+            }
+        }
 }
 
 void
