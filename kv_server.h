@@ -5,10 +5,12 @@
 
 #include <string>
 #include "kv_protocol.h"
+#include <pthread.h>
 
 
 class kv_server {
 
+        pthread_mutex_t mu;
 
 	public:
 		kv_server();

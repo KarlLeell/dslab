@@ -9,11 +9,12 @@
 #include "kv_server.h"
 
 #include <map>
-std::map<std::string, kv_protocal::versioned_val> dict;
-std::map<dtd::string, int> flag;
+std::map<std::string, kv_protocol::versioned_val> dict;
+std::map<std::string, int> flag;
 
 kv_server::kv_server() 
 {
+    pthread_mutex_init(&mu, NULL);
 }
 
 /* The RPC reply argument "val" should contain 
@@ -23,12 +24,15 @@ int
 kv_server::get(std::string key, kv_protocol::versioned_val &val)
 {
 	// You fill this in for Lab 1.
-        if(dict.count(key) == 0 || flag[key] == 0)
+        pthread_mutex_lock(&mu);
+        if(dict.count(key) == 0 || flag[key] == 0) {
+            pthread_mutex_unlock(&mu);
 	    return kv_protocol::NOEXIST;
-        else {
-            val->version = dict[key].version;
-            val->buf = dict[key].buf;
-            return kv_protocal::OK;
+        } else {
+            val.version = dict[key].version;
+            val.buf = dict[key].buf;
+            pthread_mutex_unlock(&mu);
+            return kv_protocol::OK;
         }
 }
 
@@ -40,6 +44,7 @@ int
 kv_server::put(std::string key, std::string buf, int &new_version)
 {
 	// You fill this in for Lab 1.
+        pthread_mutex_lock(&mu);
         if(dict.count(key) == 0) {
             kv_protocol::versioned_val n_val;
             n_val.version = 1;
@@ -50,7 +55,8 @@ kv_server::put(std::string key, std::string buf, int &new_version)
             dict[key].version += 1;
         }
         flag[key] = 1;
-        new_version = &(dict[key].version);
+        new_version = dict[key].version;
+        pthread_mutex_unlock(&mu);
 	return kv_protocol::OK;
 }
 
@@ -66,13 +72,25 @@ int
 kv_server::remove(std::string key, int &new_version)
 {
 	// You fill this in for Lab 1.
-        if(dict.count(key) == 0 || flag[key] == 0)
-	    return kv_protocol::NOEXIST;
-        else {
-            dict[key].version++;
+        pthread_mutex_lock(&mu);
+        if(flag[key] == 0) {
+            if(dict.count(key) == 0) {
+                kv_protocol::versioned_val n_val;
+                n_val.version = 1;
+                n_val.buf = "";
+                dict[key] = n_val;
+            } else {
+                dict[key].version += 1;
+            }
             flag[key] = 0;
-            new_version = &(flag[key].version);
-            return kv_protocal::OK;
+            pthread_mutex_unlock(&mu);
+	    return kv_protocol::NOEXIST;
+        } else {
+            dict[key].version += 1;
+            flag[key] = 0;
+            new_version = dict[key].version;
+            pthread_mutex_unlock(&mu);
+            return kv_protocol::OK;
         }
 }
 
