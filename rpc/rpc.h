@@ -7,6 +7,7 @@
 #include <map>
 #include <algorithm>
 #include <stdio.h>
+#include <string.h>
 
 #include "thr_pool.h"
 #include "marshall.h"
@@ -273,6 +274,7 @@ class rpcs : public chanmgr {
 		FORGOTTEN,  // duplicate of an old RPC whose reply we've forgotten
 	} rpcstate_t;
 
+
 	private:
 
         // state about an in-progress or completed RPC, for at-most-once.
@@ -292,6 +294,7 @@ class rpcs : public chanmgr {
 		int sz;         // the size of reply buffer
 	};
 
+
 	int port_;
 	unsigned int nonce_;
 
@@ -299,6 +302,7 @@ class rpcs : public chanmgr {
 	// per client that that client hasn't acknowledged receiving yet.
         // indexed by client nonce.
 	std::map<unsigned int, std::list<reply_t> > reply_window_;
+        std::map<unsigned int, unsigned int> forgot;
 
 	void free_reply_window(void);
 	void add_reply(unsigned int clt_nonce, unsigned int xid, char *b, int sz);

@@ -452,6 +452,7 @@ rpcs::got_pdu(connection *c, char *b, int sz)
 	djob_t *j = new djob_t(c, b, sz);
 	c->incref();
 	bool succ = dispatchpool_->addObjJob(this, &rpcs::dispatch, j);
+        //std::cout << "outside dispatch" << std::endl;
 	if(!succ || !reachable_){
 		c->decref();
 		delete j;
@@ -558,6 +559,8 @@ rpcs::dispatch(djob_t *j)
 			// if we don't know about this clt_nonce, create a cleanup object
 			if(reply_window_.find(h.clt_nonce) == reply_window_.end()){
 				VERIFY (reply_window_[h.clt_nonce].size() == 0); // create
+                                // NOTE: Add my code here
+                                forgot[h.clt_nonce] = 0;
 				jsl_log(JSL_DBG_2,
 						"rpcs::dispatch: new client %u xid %d chan %d, total clients %d\n", 
 						h.clt_nonce, h.xid, c->channo(), (int)reply_window_.size());
@@ -642,6 +645,7 @@ rpcs::dispatch(djob_t *j)
 			break;
 	}
 	c->decref();
+        std::cout << "finish dispatch "  << stat << std::endl;
 }
 
 // rpcs::dispatch calls this when an RPC request arrives.
@@ -666,46 +670,54 @@ rpcs::checkduplicate_and_update(unsigned int clt_nonce, unsigned int xid,
 
         // You fill this in for Lab 1.
 
-        //std::cout << "clt_nonce: " << clt_nonce << ". xid: " << xid << ". to delete: " << xid_rep << ". status: ";
+        std::cout << "clt_nonce: " << clt_nonce << ". xid: " << xid << ". to delete: " << xid_rep << ". status: ";
+        
+        // delete all received replies
+        if(xid_rep > forgot[clt_nonce]) {
+            for(std::list<reply_t>::iterator it = reply_window_[clt_nonce].begin(); it != reply_window_[clt_nonce].end(); ) {
+                if(it->xid <= xid_rep) {
+                    free(it->buf);
+                    it->buf = NULL;
+                    it->sz = 0;
+                    it = reply_window_[clt_nonce].erase(it);
+                } else {
+                    ++it;
+                }
+            }
+            forgot[clt_nonce] = xid_rep;
+        }
 
-        std::list<reply_t>::iterator mem;
-        // free all received reply message
-        for(std::list<reply_t>::iterator it = reply_window_[clt_nonce].begin(); it != reply_window_[clt_nonce].end(); ++it) {
-            if(it->xid <= xid_rep) {
-                free(it->buf);
-                it->buf = NULL;
-                it->sz = 0;
-            }
-        }
-        // search for desired reply
-        
-        for(mem = reply_window_[clt_nonce].begin(); mem != reply_window_[clt_nonce].end(); ++mem) {
-            //std::cout << " " << mem->xid;
-            if(mem->xid == xid)
-                break;
-        }
-        //std::cout << std::endl;
-        
-        if(mem == reply_window_[clt_nonce].end()) { // if not found, it is a new request
-            reply_t r = reply_t(xid);
-            reply_window_[clt_nonce].push_back(r);
-            //std::cout << "new" << std::endl;
-	    return NEW;
+        // if xid <= forgot, have forgotten the reply
+        if(xid <= forgot[clt_nonce]) {
+            std::cout << "forgotten" << std:: endl;
+            return FORGOTTEN;
         } else {
-            if(mem->cb_present == false) {  // still processing, no buffer saved yet
-                //std::cout << "inprogress" << std::endl;
-                return INPROGRESS;
+            // iterate to find the desired reply
+            std::list<reply_t>::iterator it;
+            for(it = reply_window_[clt_nonce].begin(); it != reply_window_[clt_nonce].end(); ++it) {
+                if(it->xid == xid)
+                    break;
             }
-            else if(mem->buf == NULL) {     // returned and deleted
-                //std::cout << "forgotten" << std::endl;
-                return FORGOTTEN;
-            } else {                   // returned, but still have the copy
-                b = &(mem->buf);
-                sz = &(mem->sz);
-                //std::cout << "done" << std::endl;
+
+            // if it == end(), new request
+            if(it == reply_window_[clt_nonce].end()) {
+                reply_t r(xid);
+                reply_window_[clt_nonce].push_back(r);
+                std::cout << "new" << std::endl;
+                return NEW;
+            } else if(!(it->cb_present)) {  // if found the struct but no reply message, it is in progress
+                std::cout << "inprogress" << std::endl;
+                return INPROGRESS;
+            } else {    // if found the struct and has reply message
+                memcpy(sz, &(it->sz), sizeof(unsigned int));
+                char *p = (char *)(malloc(it->sz));
+                b = &p;
+                memcpy(*b, it->buf, it->sz);
+                std::cout << "done" << std::endl;
                 return DONE;
             }
         }
+
 }
 
 // rpcs::dispatch calls add_reply when it is sending a reply to an RPC,
@@ -723,11 +735,19 @@ rpcs::add_reply(unsigned int clt_nonce, unsigned int xid,
         for(std::list<reply_t>::iterator it = reply_window_[clt_nonce].begin(); it != reply_window_[clt_nonce].end(); ++it) {
             if(it->xid == xid) {
                 it->cb_present = true;
-                it->buf = b;
                 it->sz = sz;
+                
+                it->buf = (char *)(malloc(it->sz));
+                /*
+                for(int i = 0; i < it->sz; i++) {
+                    (it->buf)[i] = b[i];
+                }
+                */
+                memcpy(it->buf, b, sz);
                 break;
             }
         }
+        //std::cout << "finish adding" << std::endl;
 }
 
 void
