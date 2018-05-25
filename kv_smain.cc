@@ -3,6 +3,9 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include "paxos.h"
+#include "rsm.h"
+
 #include "rpc/jsl_log.h"
 
 #include "kv_server.h"
@@ -18,21 +21,13 @@ main(int argc, char *argv[])
 	//uncomment the following line to print a lot of debug info
 	//jsl_set_debug(JSL_DBG_4);
 
-	if(argc != 2){
-		fprintf(stderr, "Usage: %s port\n", argv[0]);
+	if(argc != 3){
+		fprintf(stderr, "Usage: %s [master:]port [me:]port\n", argv[0]);
 		exit(1);
 	}
 
-
-#ifndef RSM
-	kv_server kvs;
-	rpcs server(atoi(argv[1]));
-	server.reg(kv_protocol::stat, &kvs, &kv_server::stat);
-        server.reg(kv_protocol::put, &kvs, &kv_server::put);
-        server.reg(kv_protocol::get, &kvs, &kv_server::get);
-        server.reg(kv_protocol::remove, &kvs, &kv_server::remove);
-#endif
-
+	//In Lab2, we disable your kv server and focus on Paxos implementation.
+	rsm rsm(argv[1], argv[2]);
 
 	while(1)
 		sleep(1000);
