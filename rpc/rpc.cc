@@ -645,7 +645,7 @@ rpcs::dispatch(djob_t *j)
 			break;
 	}
 	c->decref();
-        std::cout << "finish dispatch "  << stat << std::endl;
+        //std::cout << "finish dispatch "  << stat << std::endl;
 }
 
 // rpcs::dispatch calls this when an RPC request arrives.
@@ -670,7 +670,7 @@ rpcs::checkduplicate_and_update(unsigned int clt_nonce, unsigned int xid,
 
         // You fill this in for Lab 1.
 
-        std::cout << "clt_nonce: " << clt_nonce << ". xid: " << xid << ". to delete: " << xid_rep << ". status: ";
+        //std::cout << "clt_nonce: " << clt_nonce << ". xid: " << xid << ". to delete: " << xid_rep << ". status: " << std::endl;
         
         // delete all received replies
         if(xid_rep > forgot[clt_nonce]) {
@@ -689,7 +689,7 @@ rpcs::checkduplicate_and_update(unsigned int clt_nonce, unsigned int xid,
 
         // if xid <= forgot, have forgotten the reply
         if(xid <= forgot[clt_nonce]) {
-            std::cout << "forgotten" << std:: endl;
+            //std::cout << "forgotten" << std:: endl;
             return FORGOTTEN;
         } else {
             // iterate to find the desired reply
@@ -703,17 +703,16 @@ rpcs::checkduplicate_and_update(unsigned int clt_nonce, unsigned int xid,
             if(it == reply_window_[clt_nonce].end()) {
                 reply_t r(xid);
                 reply_window_[clt_nonce].push_back(r);
-                std::cout << "new" << std::endl;
+                //std::cout << "new" << std::endl;
                 return NEW;
             } else if(!(it->cb_present)) {  // if found the struct but no reply message, it is in progress
-                std::cout << "inprogress" << std::endl;
+                //std::cout << "inprogress" << std::endl;
                 return INPROGRESS;
             } else {    // if found the struct and has reply message
                 memcpy(sz, &(it->sz), sizeof(unsigned int));
-                char *p = (char *)(malloc(it->sz));
-                b = &p;
+                *b = (char *)(malloc(it->sz));
                 memcpy(*b, it->buf, it->sz);
-                std::cout << "done" << std::endl;
+                //std::cout << "done" << std::endl;
                 return DONE;
             }
         }
