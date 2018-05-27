@@ -152,7 +152,44 @@ proposer::prepare(unsigned instance, std::vector<std::string> &accepts,
   // You fill this in for Lab 2
   // Note: if got an "oldinstance" reply, commit the instance using
   // acc->commit(...), and return false.
-  	return false;
+
+    // construct prepare request struct
+    paxos_protocol::preparearg n_parg;
+    paxos_protocol::prop_t n_prop;
+    ++my_n.n;
+    n_prop = my_n;
+    n_parg.instance = instance;
+    n_parg.n = n_prop;
+    // maximum prop_t, default set to value of sender's value
+    paxos_protocol::prop_t max;
+    max = my_n
+    string max_s;
+
+    for(int i = 0; i < nodes.size(); i++) {
+        string s = nodes[i];
+        sockaddr_in dstsock;
+        make_sockaddr(s.c_str(), &dstsock);
+        client = rpcc(dstsock);
+        if(client->bind != 0)
+            tprintf("paxo client: prepare bind failed\n");
+        paxos_protocol::prepareres result;
+        string debug_m;
+        int ret = client->call(paxos_protocol::preparereq, debug_m, n_parg, result, rpcc::to(100));
+        if(result.oldinstance) {
+            acc->commit(instance, result.v_a);
+            return false;
+        } else if(result.accept) {
+            if(result.n_a > max) {
+                max = result.n_a;
+                max_s = result.v_a;
+            }
+            accepts.push_back(nodes[i]);
+        } else {}   // not oldinstance, not accepted, just pass
+    }
+
+    // finish all requests
+    return true;
+
 }
 
 // run() calls this to send out accept RPCs to accepts.
@@ -162,6 +199,26 @@ proposer::accept(unsigned instance, std::vector<std::string> &accepts,
         std::vector<std::string> nodes, std::string v)
 {
   // You fill this in for Lab 2
+    paxos_protocol::acceptarg n_aarg;
+    paxos_protocol::prop_t n_prop;
+    ++my_n.n;
+    n_prop = my_n;
+    n_aarg.instance = instance;
+    n_aarg.v = v;
+    for(int i = 0; i < nodes.size(); i++) {
+        string s = nodes[i];
+        sockaddr_in dstsock;
+        make_sockaddr(s.c_str(), &dstsock);
+        client = rpcc(dstsock);
+        if(client->bind != 0)
+            tprintf("paxo client: accept bind failed\n");
+        string debug_m;
+        bool result;
+        int ret = client->call(paxos_protocol::acceptreq, debug_m, n_parg, result, rpcc::to(100));
+        if(result) {
+            accepts.push_back(nodes[i]);
+        } else {}   // not accepted, just pass
+    }
 }
 
 void
@@ -169,6 +226,20 @@ proposer::decide(unsigned instance, std::vector<std::string> accepts,
 	      std::string v)
 {
   // You fill this in for Lab 2
+    paxos_protocol::decidearg n_darg;
+    n_aarg.instance = instance;
+    n_aarg.v = v;
+    for(int i = 0; i < accepts.size(); i++) {
+        string s = accepts[i];
+        sockaddr_in dstsock;
+        make_sockaddr(s.c_str(), &dstsock);
+        client = rpcc(dstsock);
+        if(client->bind != 0)
+            tprintf("paxo client: decide bind failed\n");
+        string debug_m;
+        int result;
+        int ret = client->call(paxos_protocol::decidereq, debug_m, n_parg, result, rpcc::to(100));
+    }
 }
 
 acceptor::acceptor(class paxos_change *_cfg, bool _first, std::string _me, 
