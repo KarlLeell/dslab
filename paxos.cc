@@ -109,6 +109,7 @@ proposer::run(int instance, std::vector<std::string> cur_nodes, std::string newv
 
 		if (majority(cur_nodes, accepts)) {
 			tprintf("paxos::manager: received a majority of prepare responses\n");
+                        tprintf("v: %s. newv: %s\n", v.c_str(), newv.c_str());
 
 			if (v.size() == 0)
 				v = newv;
@@ -155,33 +156,38 @@ proposer::prepare(unsigned instance, std::vector<std::string> &accepts,
 
     // construct prepare request struct
     paxos_protocol::preparearg n_parg;
-    paxos_protocol::prop_t n_prop;
-    ++my_n.n;
+    prop_t n_prop;
+
+    //ScopedLock sl(&pxs_mutex);
+
+    //++my_n.n;
     n_prop = my_n;
     n_parg.instance = instance;
     n_parg.n = n_prop;
-    // maximum prop_t, default set to value of sender's value
-    paxos_protocol::prop_t max;
-    max = my_n
-    string max_s;
+    // maximum prop_t, default value set to sender's value
+    prop_t max;
+    max.n = 0;
 
-    for(int i = 0; i < nodes.size(); i++) {
-        string s = nodes[i];
+    for(unsigned i = 0; i < nodes.size(); i++) {
+        std::string s = nodes[i];
         sockaddr_in dstsock;
         make_sockaddr(s.c_str(), &dstsock);
-        client = rpcc(dstsock);
-        if(client->bind != 0)
-            tprintf("paxo client: prepare bind failed\n");
+        rpcc* client = new rpcc(dstsock);
+        if(client->bind(rpcc::to(100)) != 0) {
+            tprintf("paxo client: prepare bind to %s failed\n", s.c_str());
+            continue;
+        }
         paxos_protocol::prepareres result;
-        string debug_m;
+        std::string debug_m;
         int ret = client->call(paxos_protocol::preparereq, debug_m, n_parg, result, rpcc::to(100));
         if(result.oldinstance) {
             acc->commit(instance, result.v_a);
             return false;
         } else if(result.accept) {
-            if(result.n_a > max) {
+            if(result.n_a >= max) {
                 max = result.n_a;
-                max_s = result.v_a;
+                tprintf("result.v_a %s\n", result.v_a.c_str());
+                v = result.v_a;
             }
             accepts.push_back(nodes[i]);
         } else {}   // not oldinstance, not accepted, just pass
@@ -199,22 +205,28 @@ proposer::accept(unsigned instance, std::vector<std::string> &accepts,
         std::vector<std::string> nodes, std::string v)
 {
   // You fill this in for Lab 2
+
     paxos_protocol::acceptarg n_aarg;
-    paxos_protocol::prop_t n_prop;
-    ++my_n.n;
+    prop_t n_prop;
+
+    //ScopedLock sl(&pxs_mutex);
+
+    //++my_n.n;
     n_prop = my_n;
     n_aarg.instance = instance;
     n_aarg.v = v;
-    for(int i = 0; i < nodes.size(); i++) {
-        string s = nodes[i];
+    for(unsigned i = 0; i < nodes.size(); i++) {
+        std::string s = nodes[i];
         sockaddr_in dstsock;
         make_sockaddr(s.c_str(), &dstsock);
-        client = rpcc(dstsock);
-        if(client->bind != 0)
-            tprintf("paxo client: accept bind failed\n");
-        string debug_m;
-        bool result;
-        int ret = client->call(paxos_protocol::acceptreq, debug_m, n_parg, result, rpcc::to(100));
+        rpcc *client = new rpcc(dstsock);
+        if(client->bind(rpcc::to(100)) != 0) {
+            tprintf("paxo client: accept bind to %s failed\n", s.c_str());
+            continue;
+        }
+        std::string debug_m;
+        bool result = false;
+        int ret = client->call(paxos_protocol::acceptreq, debug_m, n_aarg, result, rpcc::to(100));
         if(result) {
             accepts.push_back(nodes[i]);
         } else {}   // not accepted, just pass
@@ -227,18 +239,23 @@ proposer::decide(unsigned instance, std::vector<std::string> accepts,
 {
   // You fill this in for Lab 2
     paxos_protocol::decidearg n_darg;
-    n_aarg.instance = instance;
-    n_aarg.v = v;
-    for(int i = 0; i < accepts.size(); i++) {
-        string s = accepts[i];
+
+    //ScopedLock sl(&pxs_mutex);
+
+    n_darg.instance = instance;
+    n_darg.v = v;
+    for(unsigned i = 0; i < accepts.size(); i++) {
+        std::string s = accepts[i];
         sockaddr_in dstsock;
         make_sockaddr(s.c_str(), &dstsock);
-        client = rpcc(dstsock);
-        if(client->bind != 0)
-            tprintf("paxo client: decide bind failed\n");
-        string debug_m;
+        rpcc *client = new rpcc(dstsock);
+        if(client->bind(rpcc::to(100)) != 0) {
+            tprintf("paxo client: decide bind to %s failed\n", s.c_str());
+            continue;
+        }
+        std::string debug_m;
         int result;
-        int ret = client->call(paxos_protocol::decidereq, debug_m, n_parg, result, rpcc::to(100));
+        int ret = client->call(paxos_protocol::decidereq, debug_m, n_darg, result, rpcc::to(100));
     }
 }
 
@@ -275,6 +292,34 @@ acceptor::preparereq(std::string src, paxos_protocol::preparearg a,
   // You fill this in for Lab 2
   // Remember to initialize *BOTH* r.accept and r.oldinstance appropriately.
   // Remember to *log* the proposal if the proposal is accepted.
+
+        paxos_protocol::prepareres nr;
+        prop_t np;
+
+        ScopedLock sl(&pxs_mutex);
+
+        tprintf("preparereq for instance %d value of last instance %s last acc value %s\n", a.instance, values[instance_h].c_str(), v_a.c_str());
+
+        np = n_a;
+        nr.n_a = np;
+        if(a.instance <= instance_h) {
+            nr.oldinstance = true;
+            nr.accept = false;
+            nr.v_a = acceptor::values[a.instance];
+        } else if(a.n > n_h) {
+            n_h = a.n;
+            nr.oldinstance = false;
+            nr.accept = true;
+            nr.v_a = v_a;
+            tprintf("set v_a to %s\n", v_a.c_str());
+            l->logprop(n_h);
+        } else {
+            nr.oldinstance = false;
+            nr.accept = false;
+            nr.v_a = v_a;
+        }
+
+        r = nr;
   	return paxos_protocol::OK;
 
 }
@@ -286,7 +331,19 @@ acceptor::acceptreq(std::string src, paxos_protocol::acceptarg a, bool &r)
   // You fill this in for Lab 2
   // Remember to *log* the accept if the proposal is accepted.
 
-  	return paxos_protocol::OK;
+        ScopedLock sl(&pxs_mutex);
+        tprintf("acceptreq for instance %d v=%s\n", a.instance, a.v.c_str());
+
+        if(a.n >= n_h) {
+            n_a = a.n;
+            v_a = a.v;
+            r = true;
+            l->logaccept(a.n, a.v);
+        } else {
+            r = false;
+        }
+
+        return paxos_protocol::OK;
 }
 
 // the src argument is only for debug purpose
