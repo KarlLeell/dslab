@@ -109,7 +109,6 @@ proposer::run(int instance, std::vector<std::string> cur_nodes, std::string newv
 
 		if (majority(cur_nodes, accepts)) {
 			tprintf("paxos::manager: received a majority of prepare responses\n");
-                        tprintf("v: %s. newv: %s\n", v.c_str(), newv.c_str());
 
 			if (v.size() == 0)
 				v = newv;
@@ -156,14 +155,9 @@ proposer::prepare(unsigned instance, std::vector<std::string> &accepts,
 
     // construct prepare request struct
     paxos_protocol::preparearg n_parg;
-    prop_t n_prop;
 
-    //ScopedLock sl(&pxs_mutex);
-
-    //++my_n.n;
-    n_prop = my_n;
     n_parg.instance = instance;
-    n_parg.n = n_prop;
+    n_parg.n = my_n;
     // maximum prop_t, default value set to sender's value
     prop_t max;
     max.n = 0;
@@ -186,7 +180,6 @@ proposer::prepare(unsigned instance, std::vector<std::string> &accepts,
         } else if(result.accept) {
             if(result.n_a >= max) {
                 max = result.n_a;
-                tprintf("result.v_a %s\n", result.v_a.c_str());
                 v = result.v_a;
             }
             accepts.push_back(nodes[i]);
@@ -207,12 +200,8 @@ proposer::accept(unsigned instance, std::vector<std::string> &accepts,
   // You fill this in for Lab 2
 
     paxos_protocol::acceptarg n_aarg;
-    prop_t n_prop;
 
-    //ScopedLock sl(&pxs_mutex);
-
-    //++my_n.n;
-    n_prop = my_n;
+    n_aarg.n = my_n;
     n_aarg.instance = instance;
     n_aarg.v = v;
     for(unsigned i = 0; i < nodes.size(); i++) {
@@ -300,8 +289,7 @@ acceptor::preparereq(std::string src, paxos_protocol::preparearg a,
 
         tprintf("preparereq for instance %d value of last instance %s last acc value %s\n", a.instance, values[instance_h].c_str(), v_a.c_str());
 
-        np = n_a;
-        nr.n_a = np;
+        nr.n_a = n_a;
         if(a.instance <= instance_h) {
             nr.oldinstance = true;
             nr.accept = false;
@@ -311,7 +299,6 @@ acceptor::preparereq(std::string src, paxos_protocol::preparearg a,
             nr.oldinstance = false;
             nr.accept = true;
             nr.v_a = v_a;
-            tprintf("set v_a to %s\n", v_a.c_str());
             l->logprop(n_h);
         } else {
             nr.oldinstance = false;
