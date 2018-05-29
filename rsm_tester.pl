@@ -654,7 +654,7 @@ if ($do_run[11]) {
   print "Start kv_tester $p[0]\n";
   $t = spawn("./kv_tester", $p[0]);
 
-  sleep int(rand(5));
+  sleep int(rand(5)) + 1;
 
   print "Kill primary (PID: $pid[0]) on port $p[0]\n";
   kill "TERM", $pid[0];
