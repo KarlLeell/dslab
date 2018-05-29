@@ -8,7 +8,9 @@
 #include <pthread.h>
 
 
-class kv_server {
+#include "rsm_state_transfer.h"
+
+class kv_server : public rsm_state_transfer {
 
         pthread_mutex_t mu;
 
@@ -19,6 +21,9 @@ class kv_server {
 		int get(std::string key, kv_protocol::versioned_val &val);
 		int remove(std::string key, int &);
 		int stat(int, std::string &msg);
+
+		std::string marshal_state();
+		void unmarshal_state(std::string s);
 
 };
 
