@@ -350,6 +350,39 @@ rsm::client_invoke(int procno, std::string req, std::string &r)
 {
 	int ret = rsm_client_protocol::OK;
 	// You fill this in for Lab 3
+        ScopedLock sl(&invoke_mutex);
+
+        if(inviewchange)
+            ret = rsm_client_protocol::BUSY;
+        else if(!amiprimary()) {
+            ret = rsm_client_protocol::NOTPRIMARY;
+        } else {
+            viewstamp vs;
+            vs = myvs;
+            std::vector<string> rsm_list = cfg->get_view(vs.vid);
+            for(int i = 1; i < rsm_list.size(); i++) {
+                handle h(rsm_list[i]);
+                rpcc *client = h.safebind();
+                if(client != 0) {
+                    if(client.call(rsm_protocol::invoke, req, r, rpcc:to(100)) != 0) {
+                        ret = rsm_client_protocol::BUSY;
+                        break;
+                    }
+                } else {
+                    ret = rsm_client_protocol::BUSY;
+                    break;
+                }
+            }
+            handle h(rsm_list[0]);
+            rpcc *client = h.safebind();
+            if(client != 0) {
+                if(client.call(rsm_protocol::invoke, req, r, rpcc:to(100)) != 0) {
+                    ret = rsm_client_protocol::BUSY;
+                }
+            } else {
+                ret = rsm_client_protocol::BUSY;
+            }
+        }
 	return ret;
 }
 
