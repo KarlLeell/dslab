@@ -352,6 +352,7 @@ rsm::client_invoke(int procno, std::string req, std::string &r)
 	// You fill this in for Lab 3
         ScopedLock sl(&invoke_mutex);
 
+        tprintf("receive call\n");
         if(inviewchange)
             ret = rsm_client_protocol::BUSY;
         else if(!amiprimary()) {
@@ -359,12 +360,16 @@ rsm::client_invoke(int procno, std::string req, std::string &r)
         } else {
             viewstamp vs;
             vs = myvs;
-            std::vector<string> rsm_list = cfg->get_view(vs.vid);
-            for(int i = 1; i < rsm_list.size(); i++) {
+            std::vector<std::string> rsm_list = cfg->get_view(vs.vid);
+            // slaves executing
+            for(unsigned i = 0; i < rsm_list.size(); i++) {
+                if(rsm_list[i] == cfg->myaddr())
+                    continue;
+                int dummy = 0;
                 handle h(rsm_list[i]);
                 rpcc *client = h.safebind();
                 if(client != 0) {
-                    if(client.call(rsm_protocol::invoke, req, r, rpcc:to(100)) != 0) {
+                    if(client->call(rsm_protocol::invoke, req, dummy, rpcc::to(100)) != 0) {
                         ret = rsm_client_protocol::BUSY;
                         break;
                     }
@@ -373,14 +378,11 @@ rsm::client_invoke(int procno, std::string req, std::string &r)
                     break;
                 }
             }
-            handle h(rsm_list[0]);
-            rpcc *client = h.safebind();
-            if(client != 0) {
-                if(client.call(rsm_protocol::invoke, req, r, rpcc:to(100)) != 0) {
-                    ret = rsm_client_protocol::BUSY;
-                }
-            } else {
-                ret = rsm_client_protocol::BUSY;
+            // master executing
+            if(ret == rsm_client_protocol::OK) {
+                execute(procno, req, r);
+                last_myvs = myvs;
+                myvs.seqno++;
             }
         }
 	return ret;
@@ -397,6 +399,14 @@ rsm::invoke(int proc, viewstamp vs, std::string req, int &dummy)
 {
 	rsm_protocol::status ret = rsm_protocol::OK;
 	// You fill this in for Lab 3
+        if(vs != myvs || !inviewchange || !cfg->ismember(cfg->myaddr(), vs.vid)) {
+            ret = rsm_protocol::ERR;
+        } else {
+            std::string s;
+            execute(proc, req, s);
+            last_myvs = myvs;
+            myvs.seqno++;
+        }
 	return ret;
 }
 
