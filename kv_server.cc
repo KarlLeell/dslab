@@ -107,6 +107,15 @@ kv_server::marshal_state()
 	//Lab3: You fill this function to marshal the state of the kv_server
 	//Hint: you may want to use ostringstream to marshal your state
 	std::ostringstream ost;
+        pthread_mutex_lock(&mu);
+        ost << dict.size() << " ";
+        std::map<std::string, kv_protocol::versioned_val>::iterator it;
+        for(it = dict.begin(); it != dict.end(); ++it) {
+            ost << it->first << " ";
+            ost << it->second.buf << " ";
+            ost << it->second.version << " ";
+        }
+        pthread_mutex_unlock(&mu);
 	return ost.str();
 }
 
@@ -116,4 +125,17 @@ kv_server::unmarshal_state(std::string state)
 	//Lab3: You fill this function to unmarshal the transferred state into kv_server
 	//Hint: use istringstream to extract stuff out of the state string
   	std::istringstream ist(state);
+        pthread_mutex_lock(&mu);
+        int len;
+        ist >> len;
+        for(int i = 0; i < len; i++) {
+            std::string key, value;
+            int version;
+            ist >> key >> value >> version;
+            kv_protocol::versioned_val v;
+            v.buf = value;
+            v.version = version;
+            dict[key] = v;
+        }
+        pthread_mutex_unlock(&mu);
 }
