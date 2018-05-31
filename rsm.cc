@@ -203,12 +203,22 @@ rsm::sync_with_backups()
 		// BUSY.
 	}
 	pthread_mutex_lock(&rsm_mutex);
+        tprintf("primary sync with slaves\n");
 	// Start accepting synchronization request (statetransferreq) now!
 	insync = true;
 	// You fill this in for Lab 3
 	// Wait until
 	//   - all backups in view vid_insync are synchronized
 	//   - or there is a committed viewchange
+        backups = cfg->get_view(vid_insync);
+        backups.erase(backups.begin());
+        while(backups.size() != 0 && vid_insync == vid_commit) {
+            pthread_cond_wait(&sync_cond, &rsm_mutex);
+        }
+        if(backups.size() == 0) {
+            tprintf("all slaves finish sync\n");
+            inviewchange = false;
+        }
 	insync = false;
 	return true;
 }
@@ -222,6 +232,10 @@ rsm::sync_with_primary()
 	// You fill this in for Lab 3
 	// Keep synchronizing with primary until the synchronization succeeds,
 	// or there is a commited viewchange
+        ScopedLock sl(&rsm_mutex);
+        while(vid_commit == vid_insync && !statetransfer(m)) {}
+        if(vid_commit == vid_insync)
+            statetransferdone(m);
 	return true;
 }
 
@@ -265,6 +279,11 @@ rsm::statetransferdone(std::string m)
 {
 	// You fill this in for Lab 3
 	// - Inform primary that this slave has synchronized for vid_insync
+        handle h(m);
+        rpcc *client = h.safebind();
+        int parameter = 0;
+        if(client != 0)
+            client->call(rsm_protocol::transferdonereq, m, vid_insync, parameter, rpcc::to(100));
 	return true;
 }
 
@@ -352,11 +371,14 @@ rsm::client_invoke(int procno, std::string req, std::string &r)
 	// You fill this in for Lab 3
         ScopedLock sl(&invoke_mutex);
 
-        tprintf("receive call\n");
-        if(inviewchange)
+        tprintf("receive request %d\n", procno);
+        if(inviewchange) {
             ret = rsm_client_protocol::BUSY;
+            tprintf("in view change\n");
+        }
         else if(!amiprimary()) {
             ret = rsm_client_protocol::NOTPRIMARY;
+            tprintf("not primary\n");
         } else {
             viewstamp vs;
             vs = myvs;
@@ -368,13 +390,16 @@ rsm::client_invoke(int procno, std::string req, std::string &r)
                 int dummy = 0;
                 handle h(rsm_list[i]);
                 rpcc *client = h.safebind();
+                tprintf("calling %s\n", rsm_list[i].c_str());
                 if(client != 0) {
-                    if(client->call(rsm_protocol::invoke, req, dummy, rpcc::to(100)) != 0) {
+                    if(client->call(rsm_protocol::invoke, procno, vs, req, dummy, rpcc::to(100)) != 0) {
+                        tprintf("calling %s failed\n", rsm_list[i].c_str());
                         ret = rsm_client_protocol::BUSY;
                         break;
                     }
                 } else {
                     ret = rsm_client_protocol::BUSY;
+                    tprintf("connecting to %s failed\n", rsm_list[i].c_str());
                     break;
                 }
             }
@@ -399,7 +424,9 @@ rsm::invoke(int proc, viewstamp vs, std::string req, int &dummy)
 {
 	rsm_protocol::status ret = rsm_protocol::OK;
 	// You fill this in for Lab 3
-        if(vs != myvs || !inviewchange || !cfg->ismember(cfg->myaddr(), vs.vid)) {
+        ScopedLock sl(&invoke_mutex);
+        tprintf("received vid %d seqno %d, expect vid %d seqno %d\n", vs.vid, vs.seqno, myvs.vid, myvs.seqno);
+        if(vs != myvs || inviewchange || !cfg->ismember(cfg->myaddr(), vs.vid)) {
             ret = rsm_protocol::ERR;
         } else {
             std::string s;
@@ -445,6 +472,21 @@ rsm::transferdonereq(std::string m, unsigned vid, int &)
 	//   for the same view with me
 	// - Remove the slave from the list of unsynchronized backups
 	// - Wake up recovery thread if all backups are synchronized
+        if(!insync || vid != vid_insync)
+            ret = rsm_protocol::BUSY;
+        else {
+            std::vector<std::string>::iterator it;
+            for(it = backups.begin(); it != backups.end(); ++it) {
+                if(*it == m) {
+                    backups.erase(it);
+                    pthread_cond_signal(&sync_cond);
+                    break;
+                }
+            }
+            if(backups.size() == 0) {
+                pthread_cond_signal(&recovery_cond);
+            }
+        }
 	return ret;
 }
 
