@@ -330,15 +330,19 @@ rsm::join(std::string m)
 void 
 rsm::commit_change(unsigned vid) 
 {
+        tprintf("try to commit vid %d\n", vid);
 	ScopedLock ml(&rsm_mutex);
+        tprintf("committing %d grabbed lock\n", vid);
 	commit_change_wo(vid);
 }
 
 void 
 rsm::commit_change_wo(unsigned vid) 
 {
-	if (vid <= vid_commit)
+	if (vid <= vid_commit) {
+                tprintf("commit vid %d smaller than documented vid %d\n", vid, vid_commit);
 		return;
+        }
 	tprintf("commit_change: new view (%d)  last vs (%d,%d) %s insync %d\n", 
 			vid, last_myvs.vid, last_myvs.seqno, primary.c_str(), insync);
 	vid_commit = vid;
