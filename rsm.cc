@@ -398,8 +398,9 @@ rsm::client_invoke(int procno, std::string req, std::string &r)
                 rpcc *client = h.safebind();
                 tprintf("calling %s\n", rsm_list[i].c_str());
                 if(client != 0) {
-                    if(client->call(rsm_protocol::invoke, procno, vs, req, dummy, rpcc::to(100)) != 0) {
-                        tprintf("calling %s failed\n", rsm_list[i].c_str());
+                    int ret = client->call(rsm_protocol::invoke, procno, vs, req, dummy, rpcc::to(100));
+                    if(ret != 0) {
+                        tprintf("calling %s failed %d\n", rsm_list[i].c_str(), ret);
                         ret = rsm_client_protocol::BUSY;
                         break;
                     }

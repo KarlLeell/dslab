@@ -28,6 +28,25 @@ void
 rsm_client::primary_failure()
 {
 	// You fill this in for Lab 3
+        if(known_mems.size() < 2) {
+            printf("no known member except the failed primary\n");
+            return;
+        }
+        std::string s = known_mems[1];
+        std::vector<std::string> view;
+        handle h(s);
+        rpcc *cl = h.safebind();
+        if(cl) {
+            cl->call(rsm_client_protocol::members, 0, view, rpcc::to(100));
+            // remove old primary
+            view.pop_back();
+            view.erase(view.begin());
+            primary = view[0];
+            known_mems = view;
+        } else {
+            printf("fail to bind to %s\n", s.c_str());
+        }
+
 }
 
 rsm_protocol::status
