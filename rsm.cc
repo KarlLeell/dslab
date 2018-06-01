@@ -212,12 +212,11 @@ rsm::sync_with_backups()
 	//   - or there is a committed viewchange
         backups = cfg->get_view(vid_insync);
         backups.erase(backups.begin());
-        while(backups.size() != 0 && vid_insync == vid_commit) {
+        while(backups.size() != 0 && vid_commit == vid_insync) {
             pthread_cond_wait(&sync_cond, &rsm_mutex);
         }
         if(backups.size() == 0) {
             tprintf("all slaves finish sync\n");
-            inviewchange = false;
         }
 	insync = false;
 	return true;
@@ -232,10 +231,16 @@ rsm::sync_with_primary()
 	// You fill this in for Lab 3
 	// Keep synchronizing with primary until the synchronization succeeds,
 	// or there is a commited viewchange
-        ScopedLock sl(&rsm_mutex);
-        while(vid_commit == vid_insync && !statetransfer(m)) {}
-        if(vid_commit == vid_insync)
-            statetransferdone(m);
+        tprintf("slave sync with primary\n");
+        while(vid_commit==vid_insync && !statetransfer(m)) {}
+        if(vid_commit == vid_insync) {
+            if(statetransferdone(m) == rsm_protocol::OK) {
+                tprintf("slave %s sync successfully\n", (cfg->myaddr()).c_str());
+            } else {
+                tprintf("informing incorrect\n");
+                return false;
+            }
+        }
 	return true;
 }
 
@@ -279,12 +284,14 @@ rsm::statetransferdone(std::string m)
 {
 	// You fill this in for Lab 3
 	// - Inform primary that this slave has synchronized for vid_insync
+        tprintf("state trasnfer done, informing primary\n");
         handle h(m);
         rpcc *client = h.safebind();
         int parameter = 0;
         if(client != 0)
-            client->call(rsm_protocol::transferdonereq, m, vid_insync, parameter, rpcc::to(100));
-	return true;
+            return client->call(rsm_protocol::transferdonereq, cfg->myaddr(), vid_insync, parameter, rpcc::to(100));
+	else
+            return false;
 }
 
 
@@ -375,8 +382,7 @@ rsm::client_invoke(int procno, std::string req, std::string &r)
         if(inviewchange) {
             ret = rsm_client_protocol::BUSY;
             tprintf("in view change\n");
-        }
-        else if(!amiprimary()) {
+        } else if(!amiprimary()) {
             ret = rsm_client_protocol::NOTPRIMARY;
             tprintf("not primary\n");
         } else {
@@ -427,6 +433,7 @@ rsm::invoke(int proc, viewstamp vs, std::string req, int &dummy)
         ScopedLock sl(&invoke_mutex);
         tprintf("received vid %d seqno %d, expect vid %d seqno %d\n", vs.vid, vs.seqno, myvs.vid, myvs.seqno);
         if(vs != myvs || inviewchange || !cfg->ismember(cfg->myaddr(), vs.vid)) {
+            tprintf("wrong viewstamp\n");
             ret = rsm_protocol::ERR;
         } else {
             std::string s;
@@ -465,6 +472,7 @@ rsm::transferreq(std::string src, viewstamp last, unsigned vid,
 rsm_protocol::status
 rsm::transferdonereq(std::string m, unsigned vid, int &)
 {
+        tprintf("primary receives inform %s has finished\n", m.c_str());
 	int ret = rsm_protocol::OK;
 	ScopedLock ml(&rsm_mutex);
 	// You fill this in for Lab 3
@@ -476,15 +484,19 @@ rsm::transferdonereq(std::string m, unsigned vid, int &)
             ret = rsm_protocol::BUSY;
         else {
             std::vector<std::string>::iterator it;
-            for(it = backups.begin(); it != backups.end(); ++it) {
+            for(it = backups.begin(); it != backups.end() && backups.size()!=0; ++it) {
                 if(*it == m) {
-                    backups.erase(it);
-                    pthread_cond_signal(&sync_cond);
-                    break;
+                    tprintf("found and remove %s\n", (*it).c_str());
+                    it = backups.erase(it);
+                    //break;
+                } else {
+                    tprintf("unsynced: %s\n", (*it).c_str());
                 }
             }
             if(backups.size() == 0) {
+                tprintf("all finished sync\n");
                 pthread_cond_signal(&recovery_cond);
+                pthread_cond_signal(&sync_cond);
             }
         }
 	return ret;
