@@ -184,6 +184,7 @@ rsm::recovery()
 		}
 		tprintf("recovery: go to sleep %d %d\n", insync, inviewchange);
 		pthread_cond_wait(&recovery_cond, &rsm_mutex);
+                tprintf("recovery: wake up from sleep\n");
 	}
 }
 
@@ -289,7 +290,7 @@ rsm::statetransferdone(std::string m)
         rpcc *client = h.safebind();
         int parameter = 0;
         if(client != 0)
-            return client->call(rsm_protocol::transferdonereq, cfg->myaddr(), vid_insync, parameter, rpcc::to(100));
+            return client->call(rsm_protocol::transferdonereq, cfg->myaddr(), vid_insync, parameter, rpcc::to(1000));
 	else
             return false;
 }
@@ -343,6 +344,7 @@ rsm::commit_change_wo(unsigned vid)
 	vid_commit = vid;
 	inviewchange = true;
 	set_primary(vid);
+        pthread_cond_signal(&sync_cond);
 	pthread_cond_signal(&recovery_cond);
 	if (cfg->ismember(cfg->myaddr(), vid_commit))
 		breakpoint2();
@@ -376,7 +378,6 @@ rsm::client_invoke(int procno, std::string req, std::string &r)
 {
 	int ret = rsm_client_protocol::OK;
 	// You fill this in for Lab 3
-        ScopedLock sl(&invoke_mutex);
 
         tprintf("receive request %d\n", procno);
         if(inviewchange) {
@@ -386,23 +387,29 @@ rsm::client_invoke(int procno, std::string req, std::string &r)
             ret = rsm_client_protocol::NOTPRIMARY;
             tprintf("not primary\n");
         } else {
+            ScopedLock sl(&invoke_mutex);
             viewstamp vs;
             vs = myvs;
+            int called = 0;
             std::vector<std::string> rsm_list = cfg->get_view(vs.vid);
             // slaves executing
             for(unsigned i = 0; i < rsm_list.size(); i++) {
                 if(rsm_list[i] == cfg->myaddr())
                     continue;
+                if(called == 1)
+                    breakpoint1();
                 int dummy = 0;
                 handle h(rsm_list[i]);
                 rpcc *client = h.safebind();
                 tprintf("calling %s\n", rsm_list[i].c_str());
                 if(client != 0) {
-                    int ret = client->call(rsm_protocol::invoke, procno, vs, req, dummy, rpcc::to(100));
+                    ret = client->call(rsm_protocol::invoke, procno, vs, req, dummy, rpcc::to(1000));
                     if(ret != 0) {
                         tprintf("calling %s failed %d\n", rsm_list[i].c_str(), ret);
                         ret = rsm_client_protocol::BUSY;
                         break;
+                    } else {
+                        called++;
                     }
                 } else {
                     ret = rsm_client_protocol::BUSY;
@@ -412,6 +419,7 @@ rsm::client_invoke(int procno, std::string req, std::string &r)
             }
             // master executing
             if(ret == rsm_client_protocol::OK) {
+                tprintf("primary %s executing vid %d seqno %d\n", (cfg->myaddr()).c_str(), myvs.vid, myvs.seqno);
                 execute(procno, req, r);
                 last_myvs = myvs;
                 myvs.seqno++;
@@ -437,10 +445,12 @@ rsm::invoke(int proc, viewstamp vs, std::string req, int &dummy)
             tprintf("wrong viewstamp\n");
             ret = rsm_protocol::ERR;
         } else {
+            tprintf("slave %s executing vid %d seqno %d\n", (cfg->myaddr().c_str()), myvs.vid, myvs.seqno);
             std::string s;
             execute(proc, req, s);
             last_myvs = myvs;
             myvs.seqno++;
+            breakpoint1();
         }
 	return ret;
 }
@@ -458,6 +468,7 @@ rsm::transferreq(std::string src, viewstamp last, unsigned vid,
 	tprintf("transferreq from %s (%d,%d) vs (%d,%d)\n", src.c_str(), 
 			last.vid, last.seqno, last_myvs.vid, last_myvs.seqno);
 	if (!insync || vid != vid_insync) {
+                tprintf("incorrect vid, sync %d received %d\n", vid_insync, vid);
 		return rsm_protocol::BUSY;
 	}
 	if (stf && last != last_myvs) 
@@ -489,15 +500,14 @@ rsm::transferdonereq(std::string m, unsigned vid, int &)
                 if(*it == m) {
                     tprintf("found and remove %s\n", (*it).c_str());
                     it = backups.erase(it);
-                    //break;
-                } else {
-                    tprintf("unsynced: %s\n", (*it).c_str());
+                    break;
                 }
             }
-            if(backups.size() == 0) {
-                tprintf("all finished sync\n");
-                pthread_cond_signal(&recovery_cond);
+            tprintf("%d more unsynced backups\n", backups.size());
+            if(backups.size() == 0 || vid_insync != vid_commit) {
+                tprintf("all finished sync, or new view committed\n");
                 pthread_cond_signal(&sync_cond);
+                pthread_cond_signal(&recovery_cond);
             }
         }
 	return ret;

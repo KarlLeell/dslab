@@ -37,7 +37,7 @@ rsm_client::primary_failure()
         handle h(s);
         rpcc *cl = h.safebind();
         if(cl) {
-            cl->call(rsm_client_protocol::members, 0, view, rpcc::to(100));
+            cl->call(rsm_client_protocol::members, 0, view, rpcc::to(1000));
             // remove old primary
             view.pop_back();
             view.erase(view.begin());
