@@ -173,7 +173,7 @@ proposer::prepare(unsigned instance, std::vector<std::string> &accepts,
         }
         paxos_protocol::prepareres result;
         std::string debug_m;
-        int ret = client->call(paxos_protocol::preparereq, debug_m, n_parg, result, rpcc::to(100));
+        int ret = client->call(paxos_protocol::preparereq, debug_m, n_parg, result, rpcc::to(1000));
         if(result.oldinstance) {
             acc->commit(instance, result.v_a);
             return false;
@@ -209,7 +209,7 @@ proposer::accept(unsigned instance, std::vector<std::string> &accepts,
         sockaddr_in dstsock;
         make_sockaddr(s.c_str(), &dstsock);
         rpcc *client = new rpcc(dstsock);
-        if(client->bind(rpcc::to(100)) != 0) {
+        if(client->bind(rpcc::to(1000)) != 0) {
             tprintf("paxo client: accept bind to %s failed\n", s.c_str());
             continue;
         }
@@ -238,7 +238,7 @@ proposer::decide(unsigned instance, std::vector<std::string> accepts,
         sockaddr_in dstsock;
         make_sockaddr(s.c_str(), &dstsock);
         rpcc *client = new rpcc(dstsock);
-        if(client->bind(rpcc::to(100)) != 0) {
+        if(client->bind(rpcc::to(1000)) != 0) {
             tprintf("paxo client: decide bind to %s failed\n", s.c_str());
             continue;
         }
